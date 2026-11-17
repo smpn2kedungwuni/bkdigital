@@ -25,7 +25,7 @@ const STATE = { siswa:[], absensi:[], pelanggaran:[], konseling:[], kolaborasi:[
    situs ini (lihat PANDUAN-UPDATE.md), supaya guru mapel tidak perlu tahu atau
    menempel URL Apps Script sama sekali. Kalau dikosongkan, layar Admin BK tetap
    bisa mengisi URL secara manual seperti sebelumnya (mode lama tidak rusak). */
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxMmW2KnIZ0wcygomGcoWXtEtrjAIR8jBMWXjlWD6dlANTZt7IQpcv54LOC6EM4Zgac/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwwi6nN6lFET_2xeEla2kENUm31S1oRDZr65IEhVwMaC8ZnimFLueLgqjcQIlPuR1QvRA/exec';
 
 /* URL Web App yang pernah tersimpan di browser (localStorage) dulu SELALU menang atas
    DEFAULT_API_URL, jadi setelah URL di file ini diganti, browser yang sudah pernah login
@@ -183,6 +183,20 @@ const RealAdapter = {
     if (!json.ok) throw new Error(json.error || 'Gagal menyimpan pengaturan');
     return json.data;
   },
+  /* Akun Guru Piket (1 akun bersama untuk piket.html). Disimpan di Script
+     Properties server — password TIDAK pernah dikirim balik ke browser. */
+  async getPiketAccount(){
+    const res = await fetch(API_URL, { method:'POST', body: JSON.stringify({ action:'getPiketAccount', token: API_TOKEN }) });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Gagal memuat akun Guru Piket');
+    return json.data;
+  },
+  async savePiketAccount(data){
+    const res = await fetch(API_URL, { method:'POST', body: JSON.stringify({ action:'savePiketAccount', data, token: API_TOKEN }) });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Gagal menyimpan akun Guru Piket');
+    return json.data;
+  },
   /* Kenaikan Kelas: ubah kolom Kelas untuk banyak siswa terpilih sekaligus
      ke satu Kelas Tujuan, dalam SATU permintaan (bukan update() satu-satu). */
   async promoteSiswa(ids, kelasTujuan){
@@ -204,6 +218,21 @@ const RealAdapter = {
     const res = await fetch(API_URL, { method:'POST', body: JSON.stringify({ action:'deleteBulk', type:'siswa', ids, token: API_TOKEN }) });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Gagal menghapus data siswa terpilih');
+    return json.data;
+  },
+  /* Isi kolom Barcode banyak siswa sekaligus dalam SATU permintaan
+     (items = [{ id, barcode }]). Hanya mengisi yang masih kosong. */
+  async setBarcodeBulk(items){
+    const res = await fetch(API_URL, { method:'POST', body: JSON.stringify({ action:'setBarcodeBulk', items, token: API_TOKEN }) });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Gagal menyimpan kode QR');
+    return json.data;
+  },
+  /* Simpan foto banyak siswa sekaligus (items = [{ id, foto }]) dalam satu permintaan. */
+  async setFotoBulk(items){
+    const res = await fetch(API_URL, { method:'POST', body: JSON.stringify({ action:'setFotoBulk', items, token: API_TOKEN }) });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Gagal menyimpan foto siswa');
     return json.data;
   }
 };
@@ -286,6 +315,26 @@ const DemoAdapter = {
     }
     return this.getSettings();
   },
+  async getPiketAccount(){ return { username:'', nama:'', passwordSet:false, demo:true }; },
+  async savePiketAccount(){ throw new Error('Akun Guru Piket hanya tersedia saat tersambung ke server (bukan Mode Demo).'); },
+  /* Padanan setFotoBulk di RealAdapter (mode demo). */
+  async setFotoBulk(items){
+    const map = new Map((items||[]).map(i => [String(i.id), i.foto]));
+    const arr = this.read('siswa');
+    let updated = 0;
+    arr.forEach(s => { if (map.has(String(s.ID))){ s.Foto = map.get(String(s.ID)); updated++; } });
+    this.write('siswa', arr);
+    return { updated };
+  },
+  /* Padanan setBarcodeBulk di RealAdapter (mode demo). */
+  async setBarcodeBulk(items){
+    const map = new Map((items||[]).map(i => [String(i.id), i.barcode]));
+    const arr = this.read('siswa');
+    let updated = 0;
+    arr.forEach(s => { if (map.has(String(s.ID)) && !String(s.Barcode||'').trim()){ s.Barcode = map.get(String(s.ID)); updated++; } });
+    this.write('siswa', arr);
+    return { updated };
+  },
   /* Padanan promoteSiswa di RealAdapter, murni di localStorage untuk mode demo. */
   async promoteSiswa(ids, kelasTujuan){
     const idSet = new Set((ids||[]).map(String));
@@ -322,11 +371,11 @@ const DemoAdapter = {
   seedIfEmpty(){
     if (this.read('siswa').length) return;
     const siswa = [
-      { ID:'SIS-1', NIS:'2201001', Nama:'Ahmad Fadillah', Kelas:'IX-A', JenisKelamin:'L', TempatTglLahir:'Semarang, 12-04-2011', Alamat:'Jl. Merdeka No. 12', NamaOrtu:'Budi Santoso', NoHPOrtu:'081234567801', Catatan:'' },
-      { ID:'SIS-2', NIS:'2201002', Nama:'Siti Nurhaliza', Kelas:'IX-A', JenisKelamin:'P', TempatTglLahir:'Purwodadi, 03-08-2011', Alamat:'Jl. Anggrek No. 5', NamaOrtu:'Sri Wahyuni', NoHPOrtu:'081234567802', Catatan:'' },
-      { ID:'SIS-3', NIS:'2201003', Nama:'Rizky Maulana', Kelas:'VIII-B', JenisKelamin:'L', TempatTglLahir:'Grobogan, 21-01-2012', Alamat:'Jl. Melati No. 9', NamaOrtu:'Agus Wibowo', NoHPOrtu:'081234567803', Catatan:'Perlu pemantauan kedisiplinan' },
-      { ID:'SIS-4', NIS:'2201004', Nama:'Dewi Lestari', Kelas:'VIII-B', JenisKelamin:'P', TempatTglLahir:'Purwodadi, 15-11-2011', Alamat:'Jl. Kenanga No. 2', NamaOrtu:'Hendra Kusuma', NoHPOrtu:'081234567804', Catatan:'' },
-      { ID:'SIS-5', NIS:'2201005', Nama:'Muhammad Iqbal', Kelas:'VII-C', JenisKelamin:'L', TempatTglLahir:'Semarang, 30-06-2012', Alamat:'Jl. Mawar No. 18', NamaOrtu:'Joko Prasetyo', NoHPOrtu:'081234567805', Catatan:'' }
+      { ID:'SIS-1', NIS:'2201001', Nama:'Ahmad Fadillah', Kelas:'IX-A', JenisKelamin:'L', TempatTglLahir:'Semarang, 12-04-2011', Alamat:'Jl. Merdeka No. 12', NamaOrtu:'Budi Santoso', NoHPOrtu:'081234567801', Catatan:'', Barcode:'BK-2201001' },
+      { ID:'SIS-2', NIS:'2201002', Nama:'Siti Nurhaliza', Kelas:'IX-A', JenisKelamin:'P', TempatTglLahir:'Purwodadi, 03-08-2011', Alamat:'Jl. Anggrek No. 5', NamaOrtu:'Sri Wahyuni', NoHPOrtu:'081234567802', Catatan:'', Barcode:'BK-2201002' },
+      { ID:'SIS-3', NIS:'2201003', Nama:'Rizky Maulana', Kelas:'VIII-B', JenisKelamin:'L', TempatTglLahir:'Grobogan, 21-01-2012', Alamat:'Jl. Melati No. 9', NamaOrtu:'Agus Wibowo', NoHPOrtu:'081234567803', Catatan:'Perlu pemantauan kedisiplinan', Barcode:'BK-2201003' },
+      { ID:'SIS-4', NIS:'2201004', Nama:'Dewi Lestari', Kelas:'VIII-B', JenisKelamin:'P', TempatTglLahir:'Purwodadi, 15-11-2011', Alamat:'Jl. Kenanga No. 2', NamaOrtu:'Hendra Kusuma', NoHPOrtu:'081234567804', Catatan:'', Barcode:'BK-2201004' },
+      { ID:'SIS-5', NIS:'2201005', Nama:'Muhammad Iqbal', Kelas:'VII-C', JenisKelamin:'L', TempatTglLahir:'Semarang, 30-06-2012', Alamat:'Jl. Mawar No. 18', NamaOrtu:'Joko Prasetyo', NoHPOrtu:'081234567805', Catatan:'', Barcode:'BK-2201005' }
     ];
     this.write('siswa', siswa);
     const today = new Date(); const ymd = (d) => d.toISOString().slice(0,10);
@@ -569,7 +618,7 @@ function renderKenaikanSiswaList(prefix, kelas){
   list.innerHTML = siswaKelas.map(s => `
     <label class="checkbox-pill bulk-item">
       <input type="checkbox" class="${prefix}-siswa-check" value="${escapeHtml(s.ID)}" checked />
-      <span class="avatar-ring" style="width:24px;height:24px;font-size:9.5px;background:${colorFromString(s.Nama)}">${escapeHtml(initials(s.Nama))}</span>
+      ${avatarHtmlFor(s, 24)}
       <span>${escapeHtml(s.Nama)} <span class="muted">· NIS ${escapeHtml(s.NIS||'-')}</span></span>
     </label>`).join('');
   if (checkAll) checkAll.checked = true;
@@ -734,7 +783,7 @@ function renderSearchDropdown(q){
     dd.innerHTML = matchSiswa.map(s => {
       const c = countsFor(s.ID);
       return `<div class="search-dd-item">
-        <span class="avatar-ring" style="width:28px;height:28px;font-size:10.5px;background:${colorFromString(s.Nama)}">${escapeHtml(initials(s.Nama))}</span>
+        ${avatarHtmlFor(s, 28)}
         <span class="search-dd-info">
           <span class="search-dd-name">${escapeHtml(s.Nama)}</span>
           <span class="search-dd-sub">${escapeHtml(s.Kelas||'-')} · NIS ${escapeHtml(s.NIS||'-')} ${c.pelanggaran?`· ${c.pelanggaran} pelanggaran`:''} ${c.absensiAlpa?`· ${c.absensiAlpa}x alpa`:''}</span>
@@ -1012,7 +1061,7 @@ function siswaPickerRenderDropdown(wrap, query){
   const matches = siswaPickerFilter(wrap, query);
   dd.innerHTML = matches.length ? matches.map(s => `
       <button type="button" class="search-dd-item" data-pick-siswa="${escapeHtml(s.ID)}">
-        <span class="avatar-ring" style="width:26px;height:26px;font-size:10px;background:${colorFromString(s.Nama)}">${escapeHtml(initials(s.Nama))}</span>
+        ${avatarHtmlFor(s, 26)}
         <span class="search-dd-info"><span class="search-dd-name">${escapeHtml(s.Nama)}</span><span class="search-dd-sub">${escapeHtml(s.Kelas||'-')} · NIS ${escapeHtml(s.NIS||'-')}</span></span>
       </button>`).join('')
     : '<div class="search-dd-empty">Siswa tidak ditemukan untuk filter ini.</div>';
@@ -1191,7 +1240,7 @@ function renderSiswa(){
       ${canBulk ? `<td class="col-check"><input type="checkbox" class="siswa-check" data-id="${escapeHtml(s.ID)}" ${checked ? 'checked' : ''} aria-label="Pilih ${escapeHtml(s.Nama||'siswa')}" /></td>` : ''}
       <td>${escapeHtml(s.NIS||'-')}</td>
       <td><div style="display:flex;align-items:center;gap:10px">
-            <span class="avatar-ring" style="width:30px;height:30px;font-size:11px;background:${colorFromString(s.Nama)}">${escapeHtml(initials(s.Nama))}</span>
+            ${avatarHtmlFor(s, 34)}
             ${escapeHtml(s.Nama||'-')}
           </div></td>
       <td>${escapeHtml(s.Kelas||'-')}</td>
@@ -1200,6 +1249,7 @@ function renderSiswa(){
       <td>${escapeHtml(s.NoHPOrtu||'-')}</td>
       <td><span class="badge badge--${status.cls}"><span class="badge-dot" style="background:currentColor"></span>${status.txt}</span></td>
       <td><div class="row-actions">
+            ${canBulk ? `<button class="icon-btn-sm" data-printcard="1" data-id="${escapeHtml(s.ID)}" title="Cetak kartu QR siswa ini"><i class="fa-solid fa-id-card"></i></button>` : ''}
             <button class="icon-btn-sm" data-edit="siswa" data-id="${escapeHtml(s.ID)}"><i class="fa-solid fa-pen"></i></button>
             <button class="icon-btn-sm danger" data-del="siswa" data-id="${escapeHtml(s.ID)}"><i class="fa-solid fa-trash"></i></button>
           </div></td>
@@ -1499,7 +1549,9 @@ const FORM_CONFIG = {
       { key:'NamaOrtu', label:'Nama Orang Tua/Wali', type:'text' },
       { key:'NoHPOrtu', label:'No. HP Orang Tua', type:'text' },
       { key:'Alamat', label:'Alamat', type:'textarea', full:true },
-      { key:'Catatan', label:'Catatan Khusus', type:'textarea', full:true }
+      { key:'Catatan', label:'Catatan Khusus', type:'textarea', full:true },
+      { key:'Foto', label:'Foto Siswa', type:'photo', full:true },
+      { key:'Barcode', label:'Kode QR (untuk kartu absensi)', type:'barcode', full:true }
     ]
   },
   absensi: {
@@ -1623,6 +1675,37 @@ function openForm(type, id, prefill){
         <p class="muted" style="margin-top:6px;font-size:11.5px">Minta siswa tanda tangan atau paraf di kotak ini setelah sesi konseling selesai. TTD ini akan ikut tampil di Laporan, di sebelah Rencana Tindak Lanjut.</p>
       </div>`;
     }
+    if (f.type === 'photo'){
+      return `<div class="${wrapClass} field-photo">
+        <label>${f.label}</label>
+        <div class="photo-row">
+          <div class="photo-preview" data-initials="${escapeHtml(initials(existing ? existing.Nama : ''))}">${val ? `<img src="${escapeHtml(val)}" alt="Foto siswa" />` : '<i class="fa-solid fa-user"></i>'}</div>
+          <div class="photo-actions">
+            <button type="button" class="btn btn-ghost btn-sm photo-pick-btn"><i class="fa-solid fa-image"></i> Pilih Foto</button>
+            <button type="button" class="btn btn-ghost btn-sm photo-cam-btn"><i class="fa-solid fa-camera"></i> Ambil dari Kamera</button>
+            <button type="button" class="btn btn-ghost btn-sm photo-remove-btn${val ? '' : ' hidden'}"><i class="fa-solid fa-trash"></i> Hapus Foto</button>
+            <input type="file" accept="image/*" class="photo-file-input hidden" />
+            <input type="file" accept="image/*" capture="user" class="photo-cam-input hidden" />
+          </div>
+        </div>
+        <input type="hidden" name="${f.key}" class="photo-value" value="${escapeHtml(val||'')}" />
+        <p class="muted photo-hint">Foto otomatis dipotong rasio 3:4 &amp; dikecilkan (±10 KB) supaya muat di Google Sheet. Dipakai di daftar siswa, Mode Kamera, dan kartu pelajar QR. Gunakan foto close-up wajah, latar polos.</p>
+      </div>`;
+    }
+    if (f.type === 'barcode'){
+      return `<div class="${wrapClass} field-barcode">
+        <label>${f.label}</label>
+        <div class="barcode-row">
+          <input type="text" name="${f.key}" class="barcode-input" value="${escapeHtml(val||'')}" placeholder="contoh: BK-2201001" autocomplete="off" />
+          <button type="button" class="btn btn-ghost btn-sm barcode-gen-btn"><i class="fa-solid fa-shuffle"></i> Buat Otomatis</button>
+        </div>
+        <div class="barcode-preview-wrap">
+          <img class="barcode-preview-svg qr-preview-img" alt="" />
+          <button type="button" class="btn btn-ghost btn-sm barcode-print-btn"><i class="fa-solid fa-print"></i> Cetak Kartu QR</button>
+        </div>
+        <p class="muted photo-hint">Tempel/cetak kode QR ini di kartu siswa. Saat kartu ditunjukkan ke kamera di menu Absensi, siswa otomatis tercatat hadir.</p>
+      </div>`;
+    }
     if (f.type === 'select'){
       return `<div class="${wrapClass}"><label>${f.label}</label>
         <select name="${f.key}" ${f.required?'required':''}>
@@ -1660,6 +1743,7 @@ function openForm(type, id, prefill){
     </form>`;
 
   initSignaturePads();
+  $all('.field-barcode', $('#modalBody')).forEach(refreshBarcodePreview);
   $('#formCancel').addEventListener('click', closeModal);
   $('#entityForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1710,6 +1794,767 @@ function openForm(type, id, prefill){
 
 function openModal(){ $('#modalBackdrop').classList.add('open'); }
 function closeModal(){ $('#modalBackdrop').classList.remove('open'); }
+
+/* Avatar inisial siswa (dipakai di daftar Cetak Kartu QR & layar Mode Kamera). */
+function avatarHtmlFor(s, size){
+  size = size || 30;
+  const nama = s ? s.Nama : '';
+  const foto = s && s.Foto ? String(s.Foto) : '';
+  if (foto.indexOf('data:image/') === 0){
+    return `<span class="avatar-ring avatar-photo" style="width:${size}px;height:${size}px;"><img src="${escapeHtml(foto)}" alt="" loading="lazy" /></span>`;
+  }
+  return `<span class="avatar-ring" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.36)}px;background:${colorFromString(nama)}">${escapeHtml(initials(nama))}</span>`;
+}
+
+/* ---------------- FOTO SISWA (upload, potong 3:4, kompres) ----------------
+   Disimpan sebagai data URL JPEG di kolom "Foto" sheet Siswa. Sel Google Sheets
+   dibatasi ±50.000 karakter, jadi foto dipotong rasio 3:4 (ukuran kartu pelajar),
+   dikecilkan, dan kualitasnya diturunkan bertahap sampai <= PHOTO_MAX_CHARS. */
+const PHOTO_W = 168, PHOTO_H = 224, PHOTO_MAX_CHARS = 16000;
+function processStudentPhoto(file){
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)){ reject(new Error('File harus berupa gambar (JPG/PNG).')); return; }
+    if (file.size > 15 * 1024 * 1024){ reject(new Error('Ukuran foto terlalu besar (maks 15 MB).')); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try{
+        const sw = img.naturalWidth, sh = img.naturalHeight;
+        // Area potong 3:4 terbesar di tengah; kalau foto landscape/portrait tinggi,
+        // bagian vertikalnya digeser ke atas supaya wajah tidak terpotong.
+        let cw = sw, ch = Math.round(sw * PHOTO_H / PHOTO_W);
+        if (ch > sh){ ch = sh; cw = Math.round(sh * PHOTO_W / PHOTO_H); }
+        const sx = Math.round((sw - cw) / 2);
+        const sy = Math.round((sh - ch) * 0.25);
+        const canvas = document.createElement('canvas');
+        canvas.width = PHOTO_W; canvas.height = PHOTO_H;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, PHOTO_W, PHOTO_H);
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, sx, sy, cw, ch, 0, 0, PHOTO_W, PHOTO_H);
+        let q = 0.82, out = canvas.toDataURL('image/jpeg', q);
+        while (out.length > PHOTO_MAX_CHARS && q > 0.35){ q -= 0.07; out = canvas.toDataURL('image/jpeg', q); }
+        URL.revokeObjectURL(url);
+        resolve(out);
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Gambar tidak bisa dibaca. Coba file JPG/PNG lain.')); };
+    img.src = url;
+  });
+}
+function setPhotoField(wrap, dataUrl){
+  const val = wrap.querySelector('.photo-value');
+  const prev = wrap.querySelector('.photo-preview');
+  val.value = dataUrl || '';
+  prev.innerHTML = dataUrl ? `<img src="${dataUrl}" alt="Foto siswa" />` : '<i class="fa-solid fa-user"></i>';
+  wrap.querySelector('.photo-remove-btn').classList.toggle('hidden', !dataUrl);
+}
+document.addEventListener('click', e => {
+  const wrap = e.target.closest('.field-photo');
+  if (!wrap) return;
+  if (e.target.closest('.photo-pick-btn')) wrap.querySelector('.photo-file-input').click();
+  else if (e.target.closest('.photo-cam-btn')) wrap.querySelector('.photo-cam-input').click();
+  else if (e.target.closest('.photo-remove-btn')) setPhotoField(wrap, '');
+});
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (!t.classList || !(t.classList.contains('photo-file-input') || t.classList.contains('photo-cam-input'))) return;
+  const wrap = t.closest('.field-photo');
+  const file = t.files && t.files[0];
+  t.value = '';
+  if (!file) return;
+  try{
+    setPhotoField(wrap, await processStudentPhoto(file));
+    toast('Foto siap. Klik Simpan untuk menyimpan.', 'success');
+  }catch(err){ toast(err.message, 'error'); }
+});
+
+/* ---------------- KODE QR SISWA (generate + preview + cetak kartu) ----------------
+   Sebelumnya pakai barcode batang (CODE128) tapi seringkali sulit terbaca kamera HP/webcam
+   karena butuh fokus & sudut yang presisi. QR code jauh lebih toleran terhadap sudut, jarak,
+   dan resolusi kamera yang seadanya, jadi lebih andal untuk absensi lewat kamera. */
+function makeQrDataUrl(text, cellSize, margin){
+  if (typeof qrcode === 'undefined') return '';
+  try{
+    const qr = qrcode(0, 'M'); // 0 = deteksi ukuran otomatis, 'M' = koreksi kesalahan sedang
+    qr.addData(String(text));
+    qr.make();
+    return qr.createDataURL(cellSize || 5, margin == null ? 3 : margin);
+  }catch(e){ return ''; }
+}
+
+function refreshBarcodePreview(wrap){
+  if (!wrap) return;
+  const input = wrap.querySelector('.barcode-input');
+  const img = wrap.querySelector('.barcode-preview-svg');
+  if (!input || !img) return;
+  const val = input.value.trim();
+  const url = val ? makeQrDataUrl(val, 4, 2) : '';
+  if (url){ img.src = url; img.style.display = 'inline-block'; }
+  else { img.removeAttribute('src'); img.style.display = 'none'; }
+}
+document.addEventListener('input', e => {
+  if (!e.target.classList.contains('barcode-input')) return;
+  refreshBarcodePreview(e.target.closest('.field-barcode'));
+});
+document.addEventListener('click', e => {
+  const genBtn = e.target.closest('.barcode-gen-btn');
+  if (genBtn){
+    const wrap = genBtn.closest('.field-barcode');
+    const input = wrap.querySelector('.barcode-input');
+    const nisInput = document.querySelector('#entityForm input[name="NIS"]');
+    const base = (nisInput && nisInput.value.trim()) ? nisInput.value.trim() : Date.now().toString(36).toUpperCase();
+    input.value = 'BK-' + base;
+    refreshBarcodePreview(wrap);
+    return;
+  }
+  const printBtn = e.target.closest('.barcode-print-btn');
+  if (printBtn){
+    const wrap = printBtn.closest('.field-barcode');
+    const code = wrap.querySelector('.barcode-input').value.trim();
+    if (!code){ toast('Isi atau buat kode QR terlebih dahulu.', 'error'); return; }
+    const namaInput = document.querySelector('#entityForm input[name="Nama"]');
+    const kelasInput = document.querySelector('#entityForm input[name="Kelas"]');
+    const nisInput = document.querySelector('#entityForm input[name="NIS"]');
+    const fotoInput = document.querySelector('#entityForm input[name="Foto"]');
+    printBarcodeCard(code, namaInput ? namaInput.value : '', kelasInput ? kelasInput.value : '', nisInput ? nisInput.value : '', fotoInput ? fotoInput.value : '');
+    return;
+  }
+});
+
+function printBarcodeCard(code, nama, kelas, nis, foto){
+  printBulkBarcodeCards([{ Nama:nama, Kelas:kelas, NIS:nis, Barcode:code, Foto:foto }], SCHOOL_NAME || localStorage.getItem('bk_school_name') || '', SCHOOL_YEAR || localStorage.getItem('bk_school_year') || '');
+}
+
+/* Pastikan siswa punya kode QR; kalau belum, dibuat (BK-<NIS/ID>) dan disimpan. */
+async function ensureSiswaBarcode(s){
+  let code = (s.Barcode || '').toString().trim();
+  if (!code){
+    code = 'BK-' + (s.NIS || s.ID);
+    try{
+      const updated = await adapter.update('siswa', s.ID, { Barcode: code });
+      Object.assign(s, updated || {}, { Barcode: code });
+    }catch(e){ s.Barcode = code; }
+  }
+  return code;
+}
+
+/* Versi massal: siswa yang belum punya kode dibuatkan kodenya dan disimpan
+   dalam SATU permintaan (bukan satu-satu). Kalau backend belum diperbarui,
+   dicadangkan ke update paralel (6 sekaligus) — tetap jauh lebih cepat
+   daripada satu per satu. Kegagalan simpan tidak menghentikan pencetakan:
+   kartu tetap bisa dicetak, kodenya hanya belum tersimpan. */
+async function ensureSiswaBarcodesBulk(students){
+  const missing = [];
+  students.forEach(s => {
+    if (!(s.Barcode || '').toString().trim()){
+      const code = 'BK-' + (s.NIS || s.ID);
+      s.Barcode = code;          // dipakai untuk kartu saat ini
+      missing.push({ s, code });
+    }
+  });
+  if (!missing.length) return { generated: 0, saved: true };
+  try{
+    if (typeof adapter.setBarcodeBulk !== 'function') throw new Error('unsupported');
+    await adapter.setBarcodeBulk(missing.map(m => ({ id: m.s.ID, barcode: m.code })));
+    return { generated: missing.length, saved: true };
+  }catch(bulkErr){
+    let failed = 0, idx = 0;
+    const worker = async () => {
+      while (idx < missing.length){
+        const m = missing[idx++];
+        try{ await adapter.update('siswa', m.s.ID, { Barcode: m.code }); }
+        catch(e){ failed++; }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, missing.length) }, worker));
+    return { generated: missing.length, saved: failed === 0 };
+  }
+}
+
+/* Cetak kartu 1 siswa langsung dari baris tabel Data Siswa. */
+async function printCardForSiswa(id){
+  const s = siswaById(id);
+  if (!s){ toast('Data siswa tidak ditemukan.', 'error'); return; }
+  showLoading(true);
+  try{
+    await ensureSiswaBarcode(s);
+    renderCurrentPage();
+  }finally{ showLoading(false); }
+  printBulkBarcodeCards([s], SCHOOL_NAME || localStorage.getItem('bk_school_name') || '', SCHOOL_YEAR || localStorage.getItem('bk_school_year') || '');
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-printcard]');
+  if (btn) printCardForSiswa(btn.dataset.id);
+});
+
+/* ---------------- CETAK KARTU BARCODE MASSAL (ukuran kartu pelajar) ----------------
+   Alur: pilih kelas (opsional) & centang siswa yang mau dicetak kartunya →
+   siswa yang belum punya kode Barcode akan dibuatkan otomatis (BK-<NIS/ID>) &
+   langsung disimpan supaya bisa dipindai di Mode Kamera → semua kartu dirender
+   dalam satu halaman cetak berukuran kartu pelajar standar (ID-1 / CR80,
+   85.6mm x 53.98mm) tersusun rapi di kertas A4, siap digunting/dilaminating. */
+function openBulkBarcodePrint(){
+  $('#modalTitle').textContent = 'Cetak Kartu QR (Massal)';
+  const kelasOpts = uniqueClasses().map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  const savedSchool = SCHOOL_NAME || localStorage.getItem('bk_school_name') || '';
+  const savedYear = SCHOOL_YEAR || localStorage.getItem('bk_school_year') || '';
+  const esc = escapeHtml;
+
+  $('#modalBody').innerHTML = `
+    <div class="field"><label>Kelas</label>
+      <select id="bcpKelas"><option value="">Semua Kelas</option>${kelasOpts}</select>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Nama Sekolah (tampil di kartu)</label>
+        <input type="text" id="bcpSekolah" value="${esc(savedSchool)}" placeholder="Contoh: SMP Negeri 1 Purwodadi" />
+      </div>
+      <div class="field"><label>Tahun Ajaran (opsional)</label>
+        <input type="text" id="bcpTahun" value="${esc(savedYear)}" placeholder="Contoh: 2025/2026" />
+      </div>
+    </div>
+    <p class="muted" style="margin:-6px 0 14px">Siswa yang belum punya kode QR akan dibuatkan otomatis & disimpan, supaya langsung bisa dipindai di Mode Kamera. Foto siswa ikut tercetak di kartu; yang belum punya foto memakai inisial.</p>
+    <div class="bulk-list-head">
+      <label class="checkbox-pill"><input type="checkbox" id="bcpCheckAll" /> Pilih Semua</label>
+      <span class="muted" id="bcpCount"></span>
+    </div>
+    <div class="bulk-siswa-list" id="bcpSiswaList"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="bcpCancel">Batal</button>
+      <button type="button" class="btn btn-primary" id="bcpSubmit"><i class="fa-solid fa-print"></i> Cetak Kartu Terpilih</button>
+    </div>`;
+
+  function updateBcpCount(){
+    const total = $all('.bcp-siswa-check').length;
+    const checked = $all('.bcp-siswa-check:checked').length;
+    $('#bcpCount').textContent = total ? `${checked} dari ${total} siswa dipilih` : 'Tidak ada data siswa.';
+  }
+  function renderBcpList(kelas){
+    const list = $('#bcpSiswaList');
+    const rows = STATE.siswa
+      .filter(s => !kelas || s.Kelas === kelas)
+      .sort((a,b) => (a.Kelas||'').localeCompare(b.Kelas||'') || (a.Nama||'').localeCompare(b.Nama||''));
+    if (!rows.length){
+      list.innerHTML = `<p class="muted">Tidak ada data siswa untuk pilihan ini.</p>`;
+      $('#bcpCheckAll').checked = false;
+      updateBcpCount();
+      return;
+    }
+    list.innerHTML = rows.map(s => `
+      <label class="checkbox-pill bulk-item">
+        <input type="checkbox" class="bcp-siswa-check" value="${escapeHtml(s.ID)}" checked />
+        ${avatarHtmlFor(s, 24)}
+        <span>${escapeHtml(s.Nama||'-')} <span class="muted">· ${escapeHtml(s.Kelas||'-')} · NIS ${escapeHtml(s.NIS||'-')}${s.Foto ? '' : ' · tanpa foto'}</span></span>
+      </label>`).join('');
+    $('#bcpCheckAll').checked = true;
+    updateBcpCount();
+  }
+
+  renderBcpList('');
+  $('#bcpKelas').addEventListener('change', e => renderBcpList(e.target.value));
+  $('#bcpCheckAll').addEventListener('change', e => {
+    $all('.bcp-siswa-check').forEach(cb => cb.checked = e.target.checked);
+    updateBcpCount();
+  });
+  $('#bcpSiswaList').addEventListener('change', e => {
+    if (e.target.classList.contains('bcp-siswa-check')) updateBcpCount();
+  });
+  $('#bcpCancel').addEventListener('click', closeModal);
+
+  $('#bcpSubmit').addEventListener('click', async () => {
+    const ids = $all('.bcp-siswa-check:checked').map(cb => cb.value);
+    if (!ids.length){ toast('Pilih minimal satu siswa terlebih dahulu.', 'error'); return; }
+    const schoolName = $('#bcpSekolah').value.trim();
+    const schoolYear = $('#bcpTahun').value.trim();
+
+    showLoading(true);
+    try{
+      const students = ids.map(id => siswaById(id)).filter(Boolean);
+      const info = await ensureSiswaBarcodesBulk(students);
+      if (!info.saved) toast('Sebagian kode QR belum tersimpan ke server, tapi kartu tetap bisa dicetak.', 'error');
+      renderCurrentPage();
+      closeModal();
+      await new Promise(r => setTimeout(r, 30)); // beri waktu browser menutup modal sebelum kerja berat
+      printBulkBarcodeCards(students, schoolName, schoolYear, SCHOOL_LOGO);
+    }catch(err){
+      toast(err.message, 'error');
+    }finally{
+      showLoading(false);
+    }
+  });
+
+  openModal();
+}
+$('#btnBulkPrintBarcode').addEventListener('click', openBulkBarcodePrint);
+
+function printBulkBarcodeCards(students, schoolName, schoolYear, schoolLogo){
+  if (!students.length){ toast('Tidak ada siswa untuk dicetak.', 'error'); return; }
+  const w = window.open('', '_blank');
+  if (!w){ toast('Popup diblokir browser. Izinkan popup untuk mencetak kartu.', 'error'); return; }
+  const safe = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  // QR digenerate DI HALAMAN INI (library sudah pasti termuat), hasilnya (data URL gambar)
+  // ditempel langsung ke kartu — jendela cetak tidak perlu memuat apa pun lagi.
+  // Foto siswa juga data URL, jadi tampil tanpa koneksi internet.
+  // Logo: pakai yang dikirim pemanggil; kalau kosong, ambil logo sekolah yang tersimpan (semua jalur cetak jadi konsisten).
+  schoolLogo = schoolLogo || SCHOOL_LOGO || localStorage.getItem('bk_school_logo') || '';
+  const logo = (schoolLogo && String(schoolLogo).indexOf('data:image/') === 0) ? String(schoolLogo) : '';
+  const cardsHtml = students.map((s) => {
+    const code = (s.Barcode || '').toString();
+    const qrDataUrl = makeQrDataUrl(code, 6, 2);
+    const foto = (s.Foto && String(s.Foto).indexOf('data:image/') === 0) ? String(s.Foto) : '';
+    return `
+    <div class="card">
+      <div class="card-head">
+        ${logo ? `<span class="card-logo"></span>` : ''}
+        <div class="card-headtext">
+          ${schoolName ? `<div class="card-school">${safe(schoolName)}</div>` : ''}
+          <div class="card-title">KARTU PELAJAR &middot; ABSENSI QR${schoolYear ? ' &middot; TA ' + safe(schoolYear) : ''}</div>
+        </div>
+        ${logo ? `<span class="card-logo-spacer"></span>` : ''}
+      </div>
+      <div class="card-body">
+        <div class="card-photo">${foto ? `<img src="${foto}" alt="" />` : `<span>${safe(initials(s.Nama))}</span>`}</div>
+        <div class="card-info">
+          <div class="card-nama">${safe(s.Nama) || '-'}</div>
+          <div class="card-meta">Kelas <b>${safe(s.Kelas) || '-'}</b></div>
+          <div class="card-meta">NIS <b>${safe(s.NIS) || '-'}</b></div>
+        </div>
+        <div class="card-qrbox">
+          ${qrDataUrl ? `<img class="card-qr" src="${qrDataUrl}" alt="QR" />` : `<div class="card-qr card-qr--fail">QR gagal</div>`}
+          <div class="card-code">${safe(code)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cetak Kartu QR Siswa</title>
+    <style>
+      @page{ size:A4; margin:8mm; }
+      *{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      body{ font-family:Arial, Helvetica, sans-serif; margin:0; padding:10px; background:#e9edf1; }
+      .sheet{ display:flex; flex-wrap:wrap; gap:4mm; }
+      .card{
+        width:85.6mm; height:53.98mm; border:1px solid #2F6F63; border-radius:3mm; background:#fff;
+        display:flex; flex-direction:column; overflow:hidden; page-break-inside:avoid; break-inside:avoid;
+      }
+      .card-head{ background:#2F6F63; color:#fff; text-align:center; padding:1.6mm 3mm 1.4mm; display:flex; align-items:center; gap:2mm; }
+      .card-headtext{ flex:1; min-width:0; }
+      .card-logo{ width:9mm; height:9mm; background:#fff ${logo ? `url("${logo}")` : ''} center/80% no-repeat; border-radius:50%; flex-shrink:0; display:block; }
+      .card-logo-spacer{ width:9mm; flex-shrink:0; }
+      .card-school{ font-size:11px; font-weight:700; text-transform:uppercase; line-height:1.15; }
+      .card-title{ font-size:7px; font-weight:600; letter-spacing:.4px; opacity:.85; margin-top:.4mm; }
+      .card-body{ flex:1; min-height:0; display:flex; align-items:center; gap:2.5mm; padding:2mm 3mm; }
+      .card-photo{
+        width:21mm; height:28mm; flex-shrink:0; border:1px solid #2F6F63; border-radius:1.5mm; background:#EAF3F1;
+        overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; color:#2F6F63;
+      }
+      .card-photo img{ width:100%; height:100%; object-fit:cover; object-position:center top; display:block; }
+      .card-info{ min-width:0; flex:1; }
+      .card-nama{ font-size:13.5px; font-weight:800; color:#16211c; line-height:1.2; word-break:break-word; }
+      .card-meta{ font-size:12px; color:#444; margin-top:1.4mm; }
+      .card-meta b{ color:#16211c; }
+      .card-qrbox{ width:22mm; flex-shrink:0; text-align:center; }
+      .card-qr{ width:22mm; height:22mm; display:block; }
+      .card-qr--fail{ display:flex; align-items:center; justify-content:center; font-size:6px; color:#c0392b; border:1px dashed #c0392b; }
+      .card-code{ font-size:6.5px; color:#777; margin-top:.5mm; word-break:break-all; }
+      @media print{ body{ background:#fff; padding:0; } }
+    </style></head><body>
+    <div class="sheet">${cardsHtml}</div>
+    <script>
+      window.onload = function(){ setTimeout(function(){ window.print(); }, 450); };
+    <\/script>
+    </body></html>`);
+  w.document.close();
+}
+
+
+/* ---------------- UPLOAD FOTO SISWA MASSAL (ZIP, nama file = NIS/NISN) ----------------
+   Alur: pilih 1 file .zip berisi foto (JPG/PNG/WEBP) yang nama filenya NIS atau
+   NISN siswa, mis. "2301001.jpg" → otomatis dicocokkan ke siswa, dipotong 3:4 &
+   dikompres (sama seperti upload satu-satu), lalu disimpan sekaligus per batch.
+   Foto lama siswa yang cocok otomatis DIGANTI. Folder di dalam zip & file
+   __MACOSX diabaikan. RAR tidak didukung browser — ubah dulu ke ZIP. */
+const FOTO_ZIP_BATCH = 40;      // jumlah foto per permintaan ke server
+const FOTO_ZIP_MAX_MB = 300;    // batas ukuran file zip
+function loadJsZip(){
+  if (typeof JSZip !== 'undefined') return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    sc.onload = () => resolve();
+    sc.onerror = () => reject(new Error('Library ZIP gagal dimuat. Periksa koneksi internet lalu coba lagi.'));
+    document.head.appendChild(sc);
+  });
+}
+function fotoKeyNorm(v){ return String(v == null ? '' : v).trim().toLowerCase(); }
+function fotoKeyNoZero(v){ return fotoKeyNorm(v).replace(/^0+/, ''); }
+/* Kunci pencarian dari nama file: nama lengkap dulu, lalu potongan pertama
+   (mis. "2301001 (1)" / "2301001_foto" tetap cocok ke 2301001). */
+function fotoNameCandidates(base){
+  const out = [base];
+  base.split(/[\s_\-.()]+/).filter(Boolean).forEach(t => { if (out.indexOf(t) === -1) out.push(t); });
+  return out;
+}
+function buildSiswaFotoIndex(){
+  const exact = new Map(), noZero = new Map();
+  (STATE.siswa || []).forEach(s => {
+    [s.NIS, s.NISN].forEach(k => {
+      const a = fotoKeyNorm(k), b = fotoKeyNoZero(k);
+      if (a && !exact.has(a)) exact.set(a, s);
+      if (b && !noZero.has(b)) noZero.set(b, s);
+    });
+  });
+  return { exact, noZero };
+}
+function findSiswaForFotoName(base, idx){
+  const cands = fotoNameCandidates(base);
+  for (const c of cands){ const s = idx.exact.get(fotoKeyNorm(c)); if (s) return s; }
+  for (const c of cands){ const k = fotoKeyNoZero(c); if (k){ const s = idx.noZero.get(k); if (s) return s; } }
+  return null;
+}
+const nextTick = () => new Promise(r => setTimeout(r, 0));
+
+async function importFotoZip(file){
+  if (!file) return;
+  if (!/\.zip$/i.test(file.name)){
+    toast(/\.rar$/i.test(file.name)
+      ? 'File RAR belum didukung browser. Ubah dulu ke ZIP (klik kanan folder foto > Send to > Compressed folder).'
+      : 'Pilih file berformat .zip.', 'error');
+    return;
+  }
+  if (file.size > FOTO_ZIP_MAX_MB * 1024 * 1024){ toast(`File zip terlalu besar (maks ${FOTO_ZIP_MAX_MB} MB).`, 'error'); return; }
+  if (!(STATE.siswa || []).length){ toast('Data siswa masih kosong. Import/tambah data siswa dulu.', 'error'); return; }
+
+  showLoading(true);
+  try{
+    await loadJsZip();
+    toast('Membaca file zip…');
+    const zip = await JSZip.loadAsync(file);
+    const idx = buildSiswaFotoIndex();
+    const matched = new Map();   // ID siswa -> { s, entry, fileName }
+    const unmatched = [], notImage = [];
+    let duplicates = 0, totalFiles = 0;
+    zip.forEach((path, entry) => {
+      if (entry.dir) return;
+      const parts = path.split('/');
+      const name = parts[parts.length - 1];
+      if (!name || name.charAt(0) === '.' || path.indexOf('__MACOSX') !== -1) return;
+      totalFiles++;
+      const m = name.match(/^(.*)\.(jpe?g|png|webp)$/i);
+      if (!m){ notImage.push(name); return; }
+      const s = findSiswaForFotoName(m[1], idx);
+      if (!s){ unmatched.push(name); return; }
+      if (matched.has(String(s.ID))) duplicates++;
+      matched.set(String(s.ID), { s, entry, fileName: name, ext: m[2].toLowerCase() });
+    });
+
+    if (!matched.size){
+      showLoading(false);
+      showFotoZipSummary({ totalFiles, saved: 0, failedProcess: [], unmatched, notImage, duplicates, saveFailed: 0 });
+      return;
+    }
+
+    // 1) Proses gambar (potong 3:4 + kompres) satu per satu supaya memori aman.
+    const items = [], failedProcess = [];
+    let done = 0;
+    for (const m of matched.values()){
+      done++;
+      toast(`Memproses foto ${done} dari ${matched.size}…`);
+      try{
+        const buf = await m.entry.async('blob');
+        const type = m.ext === 'png' ? 'image/png' : (m.ext === 'webp' ? 'image/webp' : 'image/jpeg');
+        const f = new File([buf], m.fileName, { type });
+        const foto = await processStudentPhoto(f);
+        items.push({ id: m.s.ID, foto, s: m.s });
+      }catch(e){ failedProcess.push(m.fileName); }
+      if (done % 5 === 0) await nextTick();
+    }
+
+    // 2) Simpan per batch (satu permintaan per 40 foto).
+    let saved = 0, saveFailed = 0;
+    for (let i = 0; i < items.length; i += FOTO_ZIP_BATCH){
+      const chunk = items.slice(i, i + FOTO_ZIP_BATCH);
+      toast(`Menyimpan foto ${Math.min(i + chunk.length, items.length)} dari ${items.length}…`);
+      try{
+        if (typeof adapter.setFotoBulk !== 'function') throw new Error('unsupported');
+        await adapter.setFotoBulk(chunk.map(c => ({ id: c.id, foto: c.foto })));
+        chunk.forEach(c => { c.s.Foto = c.foto; });
+        saved += chunk.length;
+      }catch(bulkErr){
+        // Backend lama (belum ada setFotoBulk): cadangan update paralel 4 sekaligus.
+        let k = 0;
+        const worker = async () => {
+          while (k < chunk.length){
+            const c = chunk[k++];
+            try{ await adapter.update('siswa', c.id, { Foto: c.foto }); c.s.Foto = c.foto; saved++; }
+            catch(e){ saveFailed++; }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, chunk.length) }, worker));
+      }
+    }
+
+    renderCurrentPage();
+    showLoading(false);
+    showFotoZipSummary({ totalFiles, saved, failedProcess, unmatched, notImage, duplicates, saveFailed });
+  }catch(err){
+    showLoading(false);
+    toast(err.message || 'Gagal membaca file zip.', 'error');
+  }
+}
+
+function showFotoZipSummary(r){
+  const esc = escapeHtml;
+  const list = (arr) => arr.slice(0, 15).map(n => `<li>${esc(n)}</li>`).join('') + (arr.length > 15 ? `<li>…dan ${arr.length - 15} lainnya</li>` : '');
+  $('#modalTitle').textContent = 'Hasil Upload Foto Massal';
+  $('#modalBody').innerHTML = `
+    <p><b>${r.saved}</b> foto siswa berhasil disimpan dari <b>${r.totalFiles}</b> file di dalam zip.</p>
+    ${r.duplicates ? `<p class="muted">${r.duplicates} file ganda untuk siswa yang sama — dipakai file yang terakhir.</p>` : ''}
+    ${r.saveFailed ? `<p style="color:#c0392b"><b>${r.saveFailed}</b> foto gagal disimpan ke server. Coba upload ulang file zip yang sama.</p>` : ''}
+    ${r.unmatched.length ? `<p style="margin-top:10px"><b>${r.unmatched.length}</b> file tidak cocok dengan NIS/NISN siswa mana pun:</p><ul style="max-height:140px;overflow:auto;margin:4px 0 10px 18px">${list(r.unmatched)}</ul>` : ''}
+    ${r.failedProcess.length ? `<p><b>${r.failedProcess.length}</b> file gambar tidak bisa dibaca:</p><ul style="max-height:100px;overflow:auto;margin:4px 0 10px 18px">${list(r.failedProcess)}</ul>` : ''}
+    ${r.notImage.length ? `<p class="muted">${r.notImage.length} file dilewati karena bukan JPG/PNG/WEBP.</p>` : ''}
+    <div class="modal-actions"><button type="button" class="btn btn-primary" id="fotoZipDone">Selesai</button></div>`;
+  $('#fotoZipDone').addEventListener('click', closeModal);
+  openModal();
+}
+
+$('#btnImportFotoZip').addEventListener('click', () => $('#importFotoZipFile').click());
+$('#importFotoZipFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  await importFotoZip(file);
+});
+
+/* ---------------- KIOSK ABSENSI KAMERA (scan kartu QR) ----------------
+   Alur: kamera nyala & standby menunggu kartu QR → siswa tunjukkan
+   kartu ke kamera → sistem mencocokkan kode dengan kolom Barcode di data
+   siswa → kalau cocok, foto & nama siswa ditampilkan beberapa detik dan
+   absensi (default: Hadir) langsung tersimpan → otomatis kembali standby
+   menunggu kartu berikutnya, tanpa perlu sentuh apa pun. */
+let kioskScanner = null;
+let kioskBusy = false;
+let kioskHintTimer = null;
+let kioskFacingMode = 'environment'; // 'environment' = kamera belakang, 'user' = kamera depan
+let kioskSwitching = false;
+const KIOSK_RESULT_DELAY_OK = 3500;   // ms menampilkan hasil sebelum kembali standby
+const KIOSK_RESULT_DELAY_INFO = 3000;
+const KIOSK_RESULT_DELAY_ERR = 2200;
+const KIOSK_HINT_DELAY = 8000;        // ms sebelum menampilkan tips kalau belum ada barcode terdeteksi
+
+function showKioskHint(){
+  const el = $('#kioskResult');
+  // hanya timpa kalau masih standby (belum ada hasil scan lain yang sedang tampil)
+  if (el && el.querySelector('.kiosk-standby')){
+    el.innerHTML = `<div class="kiosk-standby"><i class="fa-solid fa-circle-info"></i>
+      <p>Belum terdeteksi. Pastikan kode QR <b>tegak lurus &amp; utuh terlihat</b> di kamera, jarak sekitar 10–20&nbsp;cm, pencahayaan cukup, dan kartu tidak buram/silau/terlipat.
+      Kalau kamera tetap susah membaca, ketik/tempel kode atau gunakan alat pemindai USB &amp; Bluetooth lewat kolom di bawah kamera.</p></div>`;
+  }
+}
+
+function resetKioskStandby(){
+  const el = $('#kioskResult');
+  if (el) el.innerHTML = `<div class="kiosk-standby"><i class="fa-solid fa-id-card"></i><p>Kamera siap. Arahkan kartu QR siswa ke kamera untuk absen otomatis.</p></div>`;
+  clearTimeout(kioskHintTimer);
+  kioskHintTimer = setTimeout(showKioskHint, KIOSK_HINT_DELAY);
+  const mi = $('#kioskManualInput');
+  if (mi){ mi.value = ''; mi.focus(); }
+}
+
+function startKioskCamera(){
+  kioskStartPromise(kioskFacingMode).catch(err => {
+    toast('Tidak bisa mengakses kamera: ' + err, 'error');
+    $('#kioskResult').innerHTML = `<div class="kiosk-card kiosk-card--error"><i class="fa-solid fa-video-slash"></i><p>Tidak bisa mengakses kamera. Pastikan browser diberi izin kamera, lalu coba lagi. Kamu tetap bisa absen lewat kolom ketik/pemindai USB di bawah.</p></div>`;
+  });
+}
+
+function stopKioskCamera(){
+  kioskBusy = false;
+  clearTimeout(kioskHintTimer);
+  if (kioskScanner){
+    const s = kioskScanner;
+    kioskScanner = null;
+    return s.stop().then(() => s.clear()).catch(() => {});
+  }
+  return Promise.resolve();
+}
+
+/* Tombol "putar kamera" — gonta-ganti antara kamera belakang (environment, default,
+   dipakai buat scan kartu QR siswa) dan kamera depan (user), misalnya kalau HP-nya
+   cuma punya satu kamera yang gampang diakses, atau dipasang di dudukan terbalik. */
+async function switchKioskCamera(){
+  if (kioskSwitching) return;
+  kioskSwitching = true;
+  const btn = $('#kioskSwitchCamBtn');
+  if (btn) btn.disabled = true;
+  const previousMode = kioskFacingMode;
+  const nextMode = kioskFacingMode === 'environment' ? 'user' : 'environment';
+  try{
+    await stopKioskCamera();
+    kioskFacingMode = nextMode;
+    $('#kioskResult').innerHTML = `<div class="kiosk-standby"><i class="fa-solid fa-rotate"></i><p>Mengganti kamera...</p></div>`;
+    await kioskStartPromise(nextMode);
+    toast(nextMode === 'user' ? 'Kamera depan aktif.' : 'Kamera belakang aktif.', 'success');
+    resetKioskStandby();
+  }catch(err){
+    // Gagal (mis. HP/laptop cuma punya satu kamera) — kembalikan ke kamera semula.
+    kioskFacingMode = previousMode;
+    toast('Kamera lain tidak tersedia di perangkat ini.', 'error');
+    try{ await kioskStartPromise(previousMode); }catch(e){ /* biarkan, pesan error sudah ditampilkan startKioskCamera */ }
+    resetKioskStandby();
+  }finally{
+    kioskSwitching = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* Bungkus startKioskCamera jadi Promise supaya switchKioskCamera bisa menunggu
+   kamera baru benar-benar menyala (atau gagal) sebelum lanjut. */
+function kioskStartPromise(facingMode){
+  return new Promise((resolve, reject) => {
+    if (typeof Html5Qrcode === 'undefined'){ reject(new Error('Pustaka pemindai belum termuat')); return; }
+    const formats = (typeof Html5QrcodeSupportedFormats !== 'undefined') ? [
+      Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODE_93, Html5QrcodeSupportedFormats.CODABAR, Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.ITF
+    ] : undefined;
+    kioskScanner = new Html5Qrcode('kioskReader', { formatsToSupport: formats, useBarCodeDetectorIfSupported: true, verbose: false });
+    kioskScanner.start(
+      { facingMode },
+      { fps: 10, qrbox: (vw, vh) => { const size = Math.floor(Math.min(vw, vh) * 0.7); return { width: Math.max(size, 150), height: Math.max(size, 150) }; } },
+      (decodedText) => handleKioskScan(decodedText),
+      () => {}
+    ).then(resolve).catch(reject);
+  });
+}
+
+/* Bunyi "beep" singkat sebagai konfirmasi tambahan saat absen berhasil —
+   dibuat langsung lewat Web Audio API, tidak perlu file suara eksternal. */
+function playKioskBeep(kind){
+  try{
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    if (kind === 'error'){
+      osc.frequency.value = 220;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      osc.start(); osc.stop(ctx.currentTime + 0.35);
+    } else {
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+      osc.start(); osc.stop(ctx.currentTime + 0.22);
+    }
+    osc.onended = () => ctx.close();
+  }catch(e){ /* browser tidak izinkan/dukung audio — abaikan, tidak fatal */ }
+}
+
+async function handleKioskScan(code){
+  if (kioskBusy) return;
+  kioskBusy = true;
+  const cleanCode = String(code || '').trim();
+  const s = STATE.siswa.find(x => (x.Barcode || '').toString().trim() && String(x.Barcode).trim() === cleanCode);
+  const status = $('#kioskStatusSelect').value || 'Hadir';
+
+  if (!s){
+    playKioskBeep('error');
+    $('#kioskResult').innerHTML = `<div class="kiosk-card kiosk-card--error"><i class="fa-solid fa-circle-xmark"></i><p>Kode <b>${escapeHtml(cleanCode)}</b> tidak terdaftar sebagai kode QR siswa manapun.</p></div>`;
+    setTimeout(() => { resetKioskStandby(); kioskBusy = false; }, KIOSK_RESULT_DELAY_ERR);
+    return;
+  }
+
+  const _d = new Date(); const today = _d.getFullYear() + '-' + String(_d.getMonth()+1).padStart(2,'0') + '-' + String(_d.getDate()).padStart(2,'0'); // tanggal lokal (toISOString memakai UTC → salah sebelum jam 07.00 WIB)
+  const already = STATE.absensi.find(a => String(a.SiswaID) === String(s.ID) && a.Tanggal === today);
+  const photoHtml = avatarHtmlFor(s, 100).replace('avatar-ring', 'avatar-ring kiosk-photo');
+
+  if (already){
+    playKioskBeep('error');
+    $('#kioskResult').innerHTML = `<div class="kiosk-card kiosk-card--warn">
+        ${photoHtml}
+        <div class="kiosk-name">${escapeHtml(s.Nama)}</div>
+        <div class="kiosk-sub">${escapeHtml(s.Kelas||'-')} · NIS ${escapeHtml(s.NIS||'-')}</div>
+        <div class="kiosk-msg"><i class="fa-solid fa-clock-rotate-left"></i> Sudah tercatat hari ini: <b>${escapeHtml(already.Status)}</b></div>
+      </div>`;
+    setTimeout(() => { resetKioskStandby(); kioskBusy = false; }, KIOSK_RESULT_DELAY_INFO);
+    return;
+  }
+
+  $('#kioskResult').innerHTML = `<div class="kiosk-card kiosk-card--pending">
+      ${photoHtml}
+      <div class="kiosk-name">${escapeHtml(s.Nama)}</div>
+      <div class="kiosk-sub">${escapeHtml(s.Kelas||'-')} · NIS ${escapeHtml(s.NIS||'-')}</div>
+      <div class="kiosk-msg"><i class="fa-solid fa-spinner fa-spin"></i> Menyimpan absensi...</div>
+    </div>`;
+  try{
+    const data = { Tanggal: today, SiswaID: s.ID, Nama: s.Nama, Kelas: s.Kelas, Status: status, Keterangan: 'Absen otomatis via kamera (QR)' };
+    const created = await adapter.create('absensi', data);
+    STATE.absensi.push({ ...data, ...created });
+
+    // Absensi SUDAH tersimpan di titik ini. Refresh tampilan (tabel/grafik) bersifat
+    // "best-effort" — kalau ada error di sini (mis. CDN Chart.js lambat/gagal dimuat),
+    // itu TIDAK BOLEH membuat notifikasi keliru melaporkan absensi gagal tersimpan.
+    try{
+      populateClassFilters();
+      renderCurrentPage();
+      renderDashboard();
+    }catch(renderErr){
+      console.warn('Absensi tersimpan, tapi gagal me-refresh tampilan:', renderErr);
+    }
+
+    playKioskBeep('ok');
+    $('#kioskResult').innerHTML = `<div class="kiosk-card kiosk-card--ok">
+        ${photoHtml}
+        <div class="kiosk-name">${escapeHtml(s.Nama)}</div>
+        <div class="kiosk-sub">${escapeHtml(s.Kelas||'-')} · NIS ${escapeHtml(s.NIS||'-')}</div>
+        <div class="kiosk-msg"><i class="fa-solid fa-circle-check"></i> Absen berhasil — ${escapeHtml(status)}</div>
+      </div>`;
+  }catch(err){
+    playKioskBeep('error');
+    $('#kioskResult').innerHTML = `<div class="kiosk-card kiosk-card--error"><i class="fa-solid fa-circle-xmark"></i><p>Gagal menyimpan absensi: ${escapeHtml(err.message)}</p></div>`;
+  }
+  setTimeout(() => { resetKioskStandby(); kioskBusy = false; }, KIOSK_RESULT_DELAY_OK);
+}
+
+function openKiosk(){
+  kioskFacingMode = 'environment'; // selalu mulai dari kamera belakang, paling pas untuk scan kartu QR
+  resetKioskStandby();
+  $('#kioskOverlay').classList.add('open');
+  startKioskCamera();
+}
+function closeKiosk(){
+  $('#kioskOverlay').classList.remove('open');
+  stopKioskCamera();
+}
+$('#btnKioskAbsensi').addEventListener('click', openKiosk);
+$('#kioskCloseBtn').addEventListener('click', closeKiosk);
+$('#kioskSwitchCamBtn').addEventListener('click', switchKioskCamera);
+
+/* Kolom ketik manual + alat pemindai barcode USB/Bluetooth (mode "keyboard wedge"):
+   alat-alat ini bekerja seperti mengetik cepat lalu menekan Enter, jadi kolom ini
+   sengaja selalu difokuskan ulang supaya siap menerima scan berikutnya tanpa perlu klik. */
+function submitKioskManual(){
+  const input = $('#kioskManualInput');
+  if (!input) return;
+  const code = input.value.trim();
+  if (!code) return;
+  input.value = '';
+  handleKioskScan(code);
+}
+const kioskManualBtn = $('#kioskManualBtn');
+const kioskManualInput = $('#kioskManualInput');
+if (kioskManualBtn) kioskManualBtn.addEventListener('click', submitKioskManual);
+if (kioskManualInput) kioskManualInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ e.preventDefault(); submitKioskManual(); }
+});
 
 /* ---------------- ABSEN MASSAL PER KELAS ----------------
    Fitur tambahan di halaman Absensi: centang beberapa siswa sekaligus (mis. satu
@@ -1778,7 +2623,7 @@ function openBulkAbsensi(){
     list.innerHTML = siswaKelas.map(s => `
       <label class="checkbox-pill bulk-item">
         <input type="checkbox" class="bulk-siswa-check" value="${escapeHtml(s.ID)}" checked />
-        <span class="avatar-ring" style="width:24px;height:24px;font-size:9.5px;background:${colorFromString(s.Nama)}">${escapeHtml(initials(s.Nama))}</span>
+        ${avatarHtmlFor(s, 24)}
         <span>${escapeHtml(s.Nama)} <span class="muted">· NIS ${escapeHtml(s.NIS||'-')}</span></span>
       </label>`).join('');
     $('#bulkCheckAll').checked = true;
@@ -2725,7 +3570,7 @@ function buildHomeVisitReportHtml(rows){
    Siswa yang NIS-nya sudah ada di database TIDAK akan ditimpa —
    data yang sudah kamu input manual sebelumnya tetap aman. Input
    manual lewat tombol "Tambah Siswa" tetap berfungsi seperti biasa. */
-const SISWA_TEMPLATE_COLUMNS = ['NIS','Nama','Kelas','JenisKelamin','TempatTglLahir','NamaOrtu','NoHPOrtu','Alamat','Catatan'];
+const SISWA_TEMPLATE_COLUMNS = ['NIS','Nama','Kelas','JenisKelamin','TempatTglLahir','NamaOrtu','NoHPOrtu','Alamat','Catatan','Barcode'];
 
 /* Nomor HP Indonesia selalu berawalan 0 (atau 62). Kalau Excel sudah telanjur
    membuang nol-nya (mis. "81234567890"), kembalikan nolnya. Spasi/strip dibuang. */
@@ -2739,7 +3584,7 @@ function normalizeNoHP(v){
 function downloadSiswaTemplate(){
   const contoh = { NIS:'2201099', Nama:'Contoh Nama Siswa', Kelas:'VII-A', JenisKelamin:'L',
     TempatTglLahir:'Kota, 01-01-2012', NamaOrtu:'Nama Orang Tua', NoHPOrtu:'0812xxxxxxx',
-    Alamat:'Alamat lengkap', Catatan:'' };
+    Alamat:'Alamat lengkap', Catatan:'', Barcode:'BK-2201099 (opsional, isi kalau kartu sudah dicetak)' };
   const ws = XLSX.utils.json_to_sheet([contoh], { header: SISWA_TEMPLATE_COLUMNS });
   // Format kolom NIS & NoHPOrtu = TEKS (sampai baris 1000) supaya Excel tidak membuang nol di depan
   // saat guru mengetik/menempel data di template ini.
@@ -2991,7 +3836,7 @@ function applyRoleUI(){
      hanya untuk tipe yang memang masih tertutup total buat Konselor (Data Siswa)
      dan fitur admin-only (Absen Massal, Import Siswa) yang tetap
      ditolak server siapa pun selain Admin. */
-  ['#btnAddSiswa','#btnImportSiswa']
+  ['#btnAddSiswa','#btnImportSiswa','#btnImportFotoZip','#btnBulkPrintBarcode']
     .forEach(sel => { const el = $(sel); if (el) el.classList.toggle('hidden', isKonselor); });
   /* Menu "Kenaikan & Kelulusan" mengelola Data Siswa secara massal (termasuk
      menghapus siswa saat kelulusan) — backend hanya mengizinkan Admin/Guru BK
@@ -3170,6 +4015,25 @@ function openSettings(){
       <button class="btn btn-primary" id="settingsProfileSaveBtn" type="button" style="margin-top:14px"><i class="fa-solid fa-check"></i> Simpan Profil Sekolah</button>
     </div>
 
+    <div class="field full backup-box" id="piketAccountBox">
+      <label>Akun Guru Piket (Absensi QR)</label>
+      <p class="muted" style="margin:2px 0 10px">Satu akun bersama untuk semua guru piket, dipakai login di halaman <b>piket.html</b>. Akun ini hanya bisa mencatat absen lewat scan QR — tidak bisa melihat data lain. Password disimpan aman di server (tidak tampil di Google Sheet).</p>
+      <div class="field full" style="margin-bottom:12px">
+        <label>Nama Tampilan</label>
+        <input type="text" id="piketNama" placeholder="Contoh: Guru Piket" autocomplete="off" />
+      </div>
+      <div class="field full" style="margin-bottom:12px">
+        <label>Username</label>
+        <input type="text" id="piketUsername" placeholder="Contoh: piket" autocomplete="off" />
+      </div>
+      <div class="field full" style="margin-bottom:4px">
+        <label>Password</label>
+        <input type="text" id="piketPassword" placeholder="Memuat..." autocomplete="new-password" />
+        <p class="muted" id="piketPasswordHint" style="margin-top:4px;font-size:11.5px">Minimal 6 karakter. Mengganti password membuat semua sesi piket yang sedang login harus login ulang.</p>
+      </div>
+      <button class="btn btn-primary" id="piketSaveBtn" type="button" style="margin-top:10px"><i class="fa-solid fa-check"></i> Simpan Akun Guru Piket</button>
+    </div>
+
     <div class="field full" style="margin-bottom:16px">
       <label>URL Web App Google Apps Script</label>
       <input type="url" id="settingsApiUrl" value="${escapeHtml(API_URL)}" placeholder="https://script.google.com/macros/s/xxxxx/exec" />
@@ -3240,6 +4104,45 @@ function openSettings(){
       toast('Profil sekolah disimpan ke Google Sheet.', 'success');
     }catch(err){
       toast('Gagal menyimpan profil sekolah: ' + err.message, 'error');
+    }finally{
+      btn.disabled = false; btn.innerHTML = originalLabel;
+    }
+  });
+
+  // ---- Akun Guru Piket ----
+  let piketPasswordAlreadySet = false;
+  (async () => {
+    try{
+      const acc = await adapter.getPiketAccount();
+      piketPasswordAlreadySet = !!acc.passwordSet;
+      $('#piketNama').value = acc.nama || '';
+      $('#piketUsername').value = acc.username || '';
+      $('#piketPassword').placeholder = piketPasswordAlreadySet ? 'Kosongkan jika tidak ingin mengubah password' : 'Isi password untuk akun piket';
+    }catch(err){
+      $('#piketPassword').placeholder = 'Isi password untuk akun piket';
+      toast('Akun Guru Piket belum bisa dimuat: ' + err.message + ' (pastikan Code.gs terbaru sudah di-deploy).', 'error');
+    }
+  })();
+  $('#piketSaveBtn').addEventListener('click', async () => {
+    const nama = $('#piketNama').value.trim();
+    const username = $('#piketUsername').value.trim();
+    const password = $('#piketPassword').value;
+    if (!username){ toast('Username Guru Piket wajib diisi.', 'error'); return; }
+    if (!piketPasswordAlreadySet && !password){ toast('Password wajib diisi untuk akun piket baru.', 'error'); return; }
+    if (password && password.length < 6){ toast('Password minimal 6 karakter.', 'error'); return; }
+    const btn = $('#piketSaveBtn');
+    const originalLabel = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan...';
+    try{
+      const data = { nama: nama || 'Guru Piket', username };
+      if (password) data.password = password;
+      const res = await adapter.savePiketAccount(data);
+      piketPasswordAlreadySet = !!res.passwordSet;
+      $('#piketPassword').value = '';
+      $('#piketPassword').placeholder = 'Kosongkan jika tidak ingin mengubah password';
+      toast('Akun Guru Piket disimpan. Login di halaman piket.html.', 'success');
+    }catch(err){
+      toast(err.message, 'error');
     }finally{
       btn.disabled = false; btn.innerHTML = originalLabel;
     }
@@ -3435,7 +4338,6 @@ function openGuruAccounts(){
   }
   renderList();
   const gaPicker = kelasPickerInit('gaKelasPicker');
-
   $('#gaList').addEventListener('click', async (e) => {
     const editBtn = e.target.closest('[data-ga-edit]');
     const delBtn = e.target.closest('[data-ga-del]');
@@ -3641,7 +4543,6 @@ function openKonselorAccounts(){
   }
   renderList();
   const kaPicker = kelasPickerInit('kaKelasPicker');
-
   $('#kaList').addEventListener('click', async (e) => {
     const editBtn = e.target.closest('[data-ka-edit]');
     const delBtn = e.target.closest('[data-ka-del]');
